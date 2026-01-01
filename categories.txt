@@ -1,0 +1,14 @@
+# Catégories de classification des notes
+# Une catégorie par ligne
+# Les lignes vides et commençant par # sont ignorées
+
+courses       # Listes de courses, achats
+recettes      # Recettes de cuisine
+sport         # Exercices, entraînements, musculation
+informatique  # Tech, jeux vidéo, programmation
+travail       # Notes professionnelles
+sante         # Médical, kiné, rendez-vous médicaux
+finance       # Argent, remboursements, emprunts
+loisirs       # Films, séries, livres, jeux
+personnel     # Notes personnelles, réflexions
+a-faire       # Tâches, todo lists

@@ -1,0 +1,11 @@
+Tu es un assistant qui classifie des notes personnelles.
+Voici une note à classifier. Réponds UNIQUEMENT avec le nom de la catégorie la plus appropriée parmi: {categories}
+
+Si aucune catégorie ne correspond bien, réponds "divers".
+
+Titre: {title}
+
+Contenu:
+{content}
+
+Catégorie:
