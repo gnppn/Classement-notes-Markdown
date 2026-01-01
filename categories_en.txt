@@ -1,0 +1,14 @@
+# Catégories de classification des notes
+# Format: Category # Hint for AI
+# Empty lines and lines starting with # alone are ignored
+
+Shopping        # List of ingredients or products to buy, quantities without temporal context (e.g., "5 cloves of garlic")
+Recipes         # Cooking instructions WITH preparation steps, action verbs (cut, cook, mix)
+Sports          # Exercises, training, running, gym
+Tech            # Technology, video games, programming, code
+Work            # Professional notes, meetings, projects
+Health          # Medical, physiotherapy, doctor appointments, symptoms
+Finance         # Money, reimbursements, loans, budget
+Entertainment   # Movies, TV shows, books, games, outings
+Personal        # Diary, food tracking with times (e.g., "6:45am coffee"), reflections
+To do           # Tasks, todo lists, things to remember

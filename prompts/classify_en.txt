@@ -1,0 +1,14 @@
+You are an assistant that classifies personal notes.
+Respond ONLY with the name of the most appropriate category.
+
+Available categories with hints:
+{categories_with_hints}
+
+If no category fits well, respond "Miscellaneous".
+
+Title: {title}
+
+Content:
+{content}
+
+Category:

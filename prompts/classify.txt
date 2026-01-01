@@ -1,7 +1,10 @@
 Tu es un assistant qui classifie des notes personnelles.
-Voici une note à classifier. Réponds UNIQUEMENT avec le nom de la catégorie la plus appropriée parmi: {categories}
+Réponds UNIQUEMENT avec le nom de la catégorie la plus appropriée.
 
-Si aucune catégorie ne correspond bien, réponds "divers".
+Catégories disponibles avec indices:
+{categories_with_hints}
+
+Si aucune catégorie ne correspond bien, réponds "Divers".
 
 Titre: {title}
 

@@ -1,16 +1,16 @@
-# nsx2md
+# Classement notes Markdown
 
 ⚠️ Petit projet de vacances **vibecodé**. N'en attendez rien de fiable.
 
-Inspiré de [Note-Station-to-markdown](https://github.com/Maboroshy/Note-Station-to-markdown/).
+Inspiré de [Note-Station-to-markdown](https://github.com/Maboroshy/Note-Station-to-markdown/). À lancer après pour re-classer les notes obtenues.
 
 ## Quoi
 
-- Un outil pour convertir les exports Synology Note Station (.nsx) en fichiers Markdown
-- Conversion HTML → Markdown propre
-- Organisation par notebooks d'origine
-- Classification automatique par IA (Ollama) des notes non classées
+- Classification automatique de notes Markdown par IA (Ollama)
 - Détection automatique de la puissance du PC pour choisir le bon modèle
+- Génération d'un fichier `Todo.md` consolidé pour les tâches
+- Interface multilingue (FR/EN selon la langue système)
+- Mode interactif avec sauvegarde de la configuration
 
 ## Installation éclair
 
@@ -26,71 +26,93 @@ pip install -r requirements.txt
 - [Ollama](https://ollama.ai) installé (pour la classification IA)
 - Un modèle llama3 sera téléchargé automatiquement si absent
 
-## Lancement minimal
+## Lancement
+
+### Mode interactif (recommandé)
 
 ```bash
-# 1. Convertir le .nsx en fichiers Markdown
-python nsx_to_md.py mon_export.nsx export
-
-# 2. Organiser par notebook d'origine
-python organize_md_by_category.py mon_export.nsx export
-
-# 3. Classifier les notes "sans-titre" avec l'IA
-python classify_with_ollama.py export
+python classify_with_ollama.py
 ```
 
-## Options utiles
+Le script demande le dossier source et le modèle, puis sauvegarde la configuration pour les prochaines exécutions.
+
+### Mode ligne de commande
 
 ```bash
+# Classifier les fichiers Markdown d'un dossier
+python classify_with_ollama.py ./mon_dossier
+
+# Inclure aussi les fichiers des sous-dossiers
+python classify_with_ollama.py ./mon_dossier --include-subfolders
+
 # Simulation sans déplacer les fichiers
-python classify_with_ollama.py export --dry-run
+python classify_with_ollama.py ./mon_dossier --dry-run
 
 # Limiter le nombre de fichiers traités
-python classify_with_ollama.py export --limit 50
+python classify_with_ollama.py ./mon_dossier --limit 50
 
 # Forcer un modèle Ollama spécifique
-python classify_with_ollama.py export --model llama3:8b-instruct-q4_0
+python classify_with_ollama.py ./mon_dossier --model llama3:8b-instruct-q4_0
+```
+
+### Générer Todo.md indépendamment
+
+```bash
+# Générer un Todo.md à partir d'un dossier
+python generate_todo.py "./À faire"
+
+# Mode simulation
+python generate_todo.py "./À faire" --dry-run
 ```
 
 ## Configuration
 
-### Catégories (`categories.txt`)
+### Catégories (`categories.txt` / `categories_en.txt`)
 
-Une catégorie par ligne. Les commentaires `#` sont ignorés.
+Une catégorie par ligne avec un indice pour l'IA après `#`.
 
 ```
-courses
-recettes
-sport
-informatique
-ma-nouvelle-categorie
+Courses         # Liste d'ingrédients SANS instructions, juste des quantités
+Recettes        # Instructions de cuisine AVEC étapes de préparation
+Sport           # Exercices, entraînements, courses à pied
+Personnel       # Journal intime, suivi alimentaire avec horaires
+À faire         # Tâches, todo lists
 ```
 
 ### Prompt IA (`prompts/classify.txt`)
 
-Personnalisez le prompt envoyé à l'IA. Variables : `{categories}`, `{title}`, `{content}`.
+Personnalisez le prompt envoyé à l'IA. Variables disponibles :
+- `{categories}` : liste des catégories
+- `{categories_with_hints}` : catégories avec leurs indices
+- `{title}` : titre de la note
+- `{content}` : contenu de la note
+
+### Configuration (`config.json`)
+
+Créé automatiquement, sauvegarde :
+- `source_dir` : dernier dossier utilisé
+- `model` : dernier modèle sélectionné
 
 ## Structure
 
 ```
-nsx2md/
-├── nsx_to_md.py                # Convertisseur NSX → Markdown
-├── organize_md_by_category.py  # Classement par notebook d'origine
+Classement notes Markdown/
 ├── classify_with_ollama.py     # Classification IA
-├── categories.txt              # Catégories (éditable)
-├── prompts/classify.txt        # Prompt IA (éditable)
+├── generate_todo.py            # Génération Todo.md
+├── categories.txt              # Catégories FR (éditable)
+├── categories_en.txt           # Catégories EN (éditable)
+├── config.json                 # Configuration (auto-généré)
+├── prompts/
+│   ├── classify.txt            # Prompt FR
+│   └── classify_en.txt         # Prompt EN
 └── requirements.txt
 ```
 
 ## Notes de fiabilité
 
-- Le format NSX n'est pas documenté, le script peut ne pas fonctionner avec tous les exports
 - La qualité de la classification dépend du modèle Ollama et du contenu des notes
 - Les notes très courtes ou vides sont difficiles à classifier
-
-## État d'esprit
-
-Ce dépôt est vraiment pensé en __one shot__ pour un besoin précis. Mais si ça peut servir...
+- Les indices dans `categories.txt` améliorent significativement la précision
 
 ## Licence
 

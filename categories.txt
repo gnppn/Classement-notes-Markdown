@@ -1,14 +1,14 @@
 # Catégories de classification des notes
-# Une catégorie par ligne
-# Les lignes vides et commençant par # sont ignorées
+# Format: Catégorie # Indice pour l'IA
+# Les lignes vides et commençant par # seul sont ignorées
 
-courses       # Listes de courses, achats
-recettes      # Recettes de cuisine
-sport         # Exercices, entraînements, musculation
-informatique  # Tech, jeux vidéo, programmation
-travail       # Notes professionnelles
-sante         # Médical, kiné, rendez-vous médicaux
-finance       # Argent, remboursements, emprunts
-loisirs       # Films, séries, livres, jeux
-personnel     # Notes personnelles, réflexions
-a-faire       # Tâches, todo lists
+Courses         # Liste d'ingrédients SANS instructions, juste des quantités et produits à acheter (ex: "5 gousses d'ail", "225g jambon")
+Recettes        # Instructions de cuisine AVEC étapes de préparation, verbes d'action (couper, cuire, mélanger)
+Sport           # Exercices, entraînements, courses à pied, musculation
+Informatique    # Tech, jeux vidéo, programmation, code
+Travail         # Notes professionnelles, réunions, projets
+Santé           # Médical, kiné, rendez-vous médicaux, symptômes
+Finance         # Argent, remboursements, emprunts, budget
+Loisirs         # Films, séries, livres, jeux, sorties
+Personnel       # Journal intime, suivi alimentaire avec horaires (ex: "6h45 café"), réflexions
+À faire         # Tâches, todo lists, choses à ne pas oublier

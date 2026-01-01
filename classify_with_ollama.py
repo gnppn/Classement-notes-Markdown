@@ -6,13 +6,16 @@ Ce script utilise un modèle LLM local (llama3) via Ollama pour analyser le cont
 de chaque note et suggérer une catégorie appropriée.
 
 Usage:
-    python classify_with_ollama.py ./export
-    python classify_with_ollama.py ./export --model llama3:8b-instruct-q4_0
-    python classify_with_ollama.py ./export --dry-run  # Simulation sans déplacement
+    python classify_with_ollama.py ./mon_dossier
+    python classify_with_ollama.py ./mon_dossier --include-subfolders  # Inclure sous-dossiers
+    python classify_with_ollama.py ./mon_dossier --model llama3:8b-instruct-q4_0
+    python classify_with_ollama.py ./mon_dossier --dry-run             # Simulation
 """
 
 import argparse
 import json
+import locale
+import os
 import re
 import shutil
 import subprocess
@@ -26,9 +29,85 @@ import urllib.error
 
 # Configuration par défaut
 SCRIPT_DIR = Path(__file__).parent
+CONFIG_FILE = SCRIPT_DIR / "config.json"
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-CATEGORIES_FILE = SCRIPT_DIR / "categories.txt"
 PROMPTS_DIR = SCRIPT_DIR / "prompts"
+
+# Détection de la langue système
+def get_system_language() -> str:
+    """Détecte la langue du système (fr ou en)."""
+    try:
+        # Utiliser les variables d'environnement
+        lang = os.environ.get("LANG", "") or os.environ.get("LANGUAGE", "") or os.environ.get("LC_ALL", "en")
+        return "fr" if lang.startswith("fr") else "en"
+    except:
+        return "en"
+
+LANG = get_system_language()
+
+# Fichiers de configuration selon la langue
+CATEGORIES_FILE = SCRIPT_DIR / ("categories.txt" if LANG == "fr" else "categories_en.txt")
+# Fallback sur categories.txt si le fichier anglais n'existe pas
+if not CATEGORIES_FILE.exists():
+    CATEGORIES_FILE = SCRIPT_DIR / "categories.txt"
+
+# Configuration par défaut
+DEFAULT_CONFIG = {
+    "source_dir": "",
+    "model": "",
+    "dry_run": False,
+    "include_subfolders": False,
+    "language": "",  # Vide = auto-détection
+}
+
+# Messages selon la langue
+MESSAGES = {
+    "fr": {
+        "config_title": "📁 Configuration du classement",
+        "source_dir": "Dossier source",
+        "no_dir": "❌ Aucun dossier spécifié",
+        "invalid_dir": "❌ Dossier invalide",
+        "models_title": "🧠 Modèles Ollama disponibles:",
+        "choice": "Choix",
+        "classifying": "Classification de {count} fichiers avec {model}...",
+        "categories_available": "Catégories disponibles:",
+        "mode": "Mode:",
+        "simulation": "SIMULATION (dry-run)",
+        "real": "RÉEL",
+        "summary": "RÉSUMÉ DE LA CLASSIFICATION",
+        "files": "fichiers",
+        "todo_found": "📝 {count} fichier(s) dans le dossier 'À faire'.",
+        "todo_classified": "📝 {count} fichier(s) classé(s) 'À faire'.",
+        "simulation_warning": "⚠️  Mode simulation - aucun fichier n'a été déplacé",
+        "miscellaneous": "Divers",
+    },
+    "en": {
+        "config_title": "📁 Classification setup",
+        "source_dir": "Source folder",
+        "no_dir": "❌ No folder specified",
+        "invalid_dir": "❌ Invalid folder",
+        "models_title": "🧠 Available Ollama models:",
+        "choice": "Choice",
+        "classifying": "Classifying {count} files with {model}...",
+        "categories_available": "Available categories:",
+        "mode": "Mode:",
+        "simulation": "SIMULATION (dry-run)",
+        "real": "REAL",
+        "summary": "CLASSIFICATION SUMMARY",
+        "files": "files",
+        "todo_found": "📝 {count} file(s) in 'To do' folder.",
+        "todo_classified": "📝 {count} file(s) classified as 'To do'.",
+        "simulation_warning": "⚠️  Simulation mode - no files were moved",
+        "miscellaneous": "Miscellaneous",
+    }
+}
+
+def msg(key: str, **kwargs) -> str:
+    """Retourne un message dans la langue courante."""
+    text = MESSAGES.get(LANG, MESSAGES["en"]).get(key, key)
+    if kwargs:
+        text = text.format(**kwargs)
+    return text
 
 # Modèles llama3 selon la puissance du PC
 LLAMA3_MODELS = {
@@ -41,35 +120,87 @@ LLAMA3_MODELS = {
 _selected_model = None
 
 # Catégories par défaut (utilisées si categories.txt n'existe pas)
-DEFAULT_CATEGORIES = [
-    "courses", "recettes", "sport", "informatique", "travail",
-    "sante", "finance", "loisirs", "personnel", "a-faire",
+DEFAULT_CATEGORIES_FR = [
+    "Courses", "Recettes", "Sport", "Informatique", "Travail",
+    "Santé", "Finance", "Loisirs", "Personnel", "À faire",
 ]
+DEFAULT_CATEGORIES_EN = [
+    "Shopping", "Recipes", "Sports", "Tech", "Work",
+    "Health", "Finance", "Entertainment", "Personal", "To do",
+]
+DEFAULT_CATEGORIES = DEFAULT_CATEGORIES_FR if LANG == "fr" else DEFAULT_CATEGORIES_EN
 
 
-def load_categories() -> List[str]:
-    """Charge les catégories depuis categories.txt ou utilise les valeurs par défaut."""
+def load_config() -> dict:
+    """Charge ou crée la configuration."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return {**DEFAULT_CONFIG, **json.load(f)}
+        except:
+            pass
+    return DEFAULT_CONFIG.copy()
+
+
+def save_config(config: dict) -> None:
+    """Sauvegarde la configuration."""
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+
+def load_categories() -> Tuple[List[str], List[str]]:
+    """Charge les catégories depuis categories.txt ou utilise les valeurs par défaut.
+    
+    Returns:
+        Tuple (liste des catégories, liste des lignes complètes avec indices)
+    """
     if not CATEGORIES_FILE.exists():
         print(f"   ⚠️  Fichier {CATEGORIES_FILE.name} non trouvé, utilisation des catégories par défaut")
-        return DEFAULT_CATEGORIES
+        return DEFAULT_CATEGORIES, [f"{cat} # " for cat in DEFAULT_CATEGORIES]
     
     categories = []
+    categories_with_hints = []
     try:
         with open(CATEGORIES_FILE, 'r', encoding='utf-8') as f:
             for line in f:
-                line = line.split('#')[0].strip()  # Ignorer les commentaires
-                if line:
+                line = line.strip()
+                # Ignorer les lignes vides et les commentaires purs
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Séparer la catégorie de l'indice
+                if '#' in line:
+                    parts = line.split('#', 1)  # Split seulement au premier #
+                    cat_part = parts[0].strip()
+                    hint_part = parts[1].strip() if len(parts) > 1 else ""
+                    if cat_part:
+                        categories.append(cat_part)
+                        # Format propre : "Catégorie # Indice"
+                        categories_with_hints.append(f"{cat_part} # {hint_part}")
+                else:
                     categories.append(line)
+                    categories_with_hints.append(line)
+        
         if categories:
-            return categories
+            return categories, categories_with_hints
     except Exception as e:
         print(f"   ⚠️  Erreur lecture {CATEGORIES_FILE.name}: {e}")
     
-    return DEFAULT_CATEGORIES
+    return DEFAULT_CATEGORIES, [f"{cat} # " for cat in DEFAULT_CATEGORIES]
 
 
 def load_prompt(name: str) -> Optional[str]:
-    """Charge un prompt depuis le dossier prompts/."""
+    """Charge un prompt depuis le dossier prompts/ selon la langue."""
+    # Essayer d'abord le fichier spécifique à la langue
+    if LANG == "en":
+        prompt_file = PROMPTS_DIR / f"{name}_en.txt"
+        if prompt_file.exists():
+            try:
+                return prompt_file.read_text(encoding='utf-8')
+            except Exception as e:
+                print(f"   ⚠️  Erreur lecture prompt {name}_en: {e}")
+    
+    # Fallback sur le fichier par défaut (français)
     prompt_file = PROMPTS_DIR / f"{name}.txt"
     if prompt_file.exists():
         try:
@@ -204,14 +335,21 @@ def get_default_model() -> str:
 
 
 def slugify(value: str, max_length: int = 80) -> str:
-    """Convertit une chaîne en slug pour nom de dossier."""
-    value = value.strip().lower()
-    value = re.sub(r"[^a-z0-9àâäéèêëïîôùûüç]+", "-", value)
-    value = value.strip("-")
+    """Nettoie une chaîne pour un nom de dossier valide.
+    
+    Préserve les majuscules, accents et espaces.
+    Supprime uniquement les caractères non autorisés dans les noms de fichiers.
+    """
+    value = value.strip()
+    # Supprimer les caractères interdits dans les noms de fichiers/dossiers
+    value = re.sub(r'[<>:"/\\|?*]', '', value)
+    # Remplacer les espaces multiples par un seul espace
+    value = re.sub(r'\s+', ' ', value)
+    value = value.strip()
     if not value:
-        value = "divers"
+        value = "Divers"
     if len(value) > max_length:
-        value = value[:max_length].rstrip("-")
+        value = value[:max_length].rstrip()
     return value
 
 
@@ -226,6 +364,38 @@ def read_md_file(filepath: Path, max_chars: int = 1000) -> str:
     except Exception as e:
         print(f"  Erreur lecture {filepath}: {e}")
         return ""
+
+
+def read_md_file_full(filepath: Path) -> Tuple[str, str, str]:
+    """Lit le contenu complet d'un fichier MD et extrait le titre, la date et le contenu.
+    
+    Returns:
+        Tuple (titre, date_modified, contenu_sans_frontmatter)
+    """
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        title = filepath.stem
+        modified = ""
+        body = content
+        
+        # Extraire le frontmatter YAML si présent
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                frontmatter = parts[1]
+                body = parts[2].strip()
+                
+                # Extraire Title et Modified du frontmatter
+                for line in frontmatter.split("\n"):
+                    if line.startswith("Title:"):
+                        title = line.split(":", 1)[1].strip().strip('"')
+                    elif line.startswith("Modified:"):
+                        modified = line.split(":", 1)[1].strip().strip('"')
+        
+        return title, modified, body
+    except Exception as e:
+        print(f"  Erreur lecture {filepath}: {e}")
+        return filepath.stem, "", ""
 
 
 def call_ollama(prompt: str, model: Optional[str] = None) -> Optional[str]:
@@ -263,25 +433,30 @@ def call_ollama(prompt: str, model: Optional[str] = None) -> Optional[str]:
         return None
 
 
-def classify_note(title: str, content: str, categories: List[str], model: Optional[str] = None) -> Optional[str]:
+def classify_note(title: str, content: str, categories: List[str], categories_with_hints: List[str], model: Optional[str] = None) -> Optional[str]:
     """Utilise Ollama pour classifier une note dans une catégorie."""
     
     categories_list = ", ".join(categories)
+    hints_formatted = "\n".join(f"- {hint}" for hint in categories_with_hints)
     
     # Charger le prompt externe ou utiliser le prompt par défaut
     prompt_template = load_prompt("classify")
     if prompt_template:
         prompt = prompt_template.format(
             categories=categories_list,
+            categories_with_hints=hints_formatted,
             title=title,
             content=content
         )
     else:
         # Prompt par défaut si le fichier n'existe pas
         prompt = f"""Tu es un assistant qui classifie des notes personnelles.
-Voici une note à classifier. Réponds UNIQUEMENT avec le nom de la catégorie la plus appropriée parmi: {categories_list}
+Réponds UNIQUEMENT avec le nom de la catégorie la plus appropriée.
 
-Si aucune catégorie ne correspond bien, réponds "divers".
+Catégories disponibles avec indices:
+{hints_formatted}
+
+Si aucune catégorie ne correspond bien, réponds "Divers".
 
 Titre: {title}
 
@@ -295,20 +470,23 @@ Catégorie:"""
     if not response:
         return None
     
-    # Nettoyer la réponse
-    response = response.lower().strip()
-    response = re.sub(r"[^a-zàâäéèêëïîôùûüç-]", "", response)
+    # Nettoyer la réponse (garder lettres, accents, espaces)
+    response = response.strip()
+    response = re.sub(r"[^a-zA-ZàâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ\s-]", "", response)
+    response = response.strip()
     
-    # Vérifier si la réponse est une catégorie valide
-    if response in categories:
-        return response
+    # Vérifier si la réponse est une catégorie valide (comparaison insensible à la casse)
+    response_lower = response.lower()
+    for cat in categories:
+        if cat.lower() == response_lower:
+            return cat
     
     # Essayer de trouver une correspondance partielle
     for cat in categories:
-        if cat in response or response in cat:
+        if cat.lower() in response_lower or response_lower in cat.lower():
             return cat
     
-    return "divers"
+    return "Divers"
 
 
 def get_all_md_files(base_dir: Path, include_subfolders: bool = True) -> List[Path]:
@@ -329,12 +507,96 @@ def get_all_md_files(base_dir: Path, include_subfolders: bool = True) -> List[Pa
     return md_files
 
 
+def generate_todo_file(todo_files: List[Path], output_dir: Path, dry_run: bool = False) -> Optional[Path]:
+    """Génère un fichier Todo.md consolidé à partir des fichiers classés 'À faire'.
+    
+    Args:
+        todo_files: Liste des fichiers classés 'À faire'
+        output_dir: Dossier de destination
+        dry_run: Si True, affiche le contenu sans créer le fichier
+    
+    Returns:
+        Le chemin du fichier créé, ou None en mode dry_run
+    """
+    if not todo_files:
+        return None
+    
+    # Construire le contenu du fichier Todo.md
+    lines = [
+        "# 📝 Liste des tâches",
+        "",
+        f"*Généré automatiquement le {time.strftime('%d/%m/%Y à %H:%M')}*",
+        "",
+        "---",
+        ""
+    ]
+    
+    for md_file in todo_files:
+        title, modified, body = read_md_file_full(md_file)
+        
+        # Ajouter le titre de la tâche
+        lines.append(f"## {title}")
+        
+        if modified:
+            lines.append(f"*Modifié le {modified}*")
+        
+        lines.append("")
+        
+        # Nettoyer et formater le contenu
+        if body:
+            # Supprimer les lignes vides au début
+            body_lines = body.strip().split("\n")
+            
+            # Ignorer la première ligne si elle répète le titre
+            if body_lines and body_lines[0].strip().lower() == title.lower():
+                body_lines = body_lines[1:]
+            
+            # Garder le texte tel quel
+            for line in body_lines:
+                line = line.strip()
+                if line:
+                    lines.append(line)
+            
+            lines.append("")
+        
+        lines.append("---")
+        lines.append("")
+    
+    content = "\n".join(lines)
+    
+    if dry_run:
+        print("\n" + "=" * 60)
+        print("📝 APERÇU DU FICHIER Todo.md")
+        print("=" * 60)
+        print(content[:1000])
+        if len(content) > 1000:
+            print("[...tronqué pour l'aperçu...]")
+        return None
+    
+    # Créer le fichier
+    todo_path = output_dir / "Todo.md"
+    
+    # Gérer les conflits de nom
+    if todo_path.exists():
+        suffix = 1
+        while todo_path.exists():
+            todo_path = output_dir / f"Todo_{suffix}.md"
+            suffix += 1
+    
+    todo_path.write_text(content, encoding="utf-8")
+    print(f"\n✅ Fichier Todo.md créé : {todo_path}")
+    
+    return todo_path
+
+
 def classify_and_organize(
     md_dir: Path,
     categories: List[str],
+    categories_with_hints: List[str],
     model: Optional[str] = None,
     dry_run: bool = False,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    include_subfolders: bool = False
 ) -> None:
     """Classifie et organise les fichiers MD par catégorie."""
     
@@ -346,7 +608,7 @@ def classify_and_organize(
         model = select_and_ensure_model()
     
     # Récupérer les fichiers à classifier
-    md_files = get_all_md_files(md_dir)
+    md_files = get_all_md_files(md_dir, include_subfolders=include_subfolders)
     
     if not md_files:
         print("Aucun fichier MD à classifier.")
@@ -355,15 +617,19 @@ def classify_and_organize(
     if limit:
         md_files = md_files[:limit]
     
-    print(f"Classification de {len(md_files)} fichiers avec {model}...")
-    print(f"Catégories disponibles: {', '.join(categories)}")
-    print(f"Mode: {'SIMULATION (dry-run)' if dry_run else 'RÉEL'}")
+    print(msg("classifying", count=len(md_files), model=model))
+    print(f"{msg('categories_available')} {', '.join(categories)}")
+    mode_text = msg("simulation") if dry_run else msg("real")
+    print(f"{msg('mode')} {mode_text}")
     print("-" * 60)
     
     # Statistiques
     stats = {cat: 0 for cat in categories}
-    stats["divers"] = 0
-    stats["erreur"] = 0
+    stats[msg("miscellaneous")] = 0
+    stats["erreur" if LANG == "fr" else "error"] = 0
+    
+    # Collecter les fichiers classés 'À faire' / 'To do'
+    todo_files: List[Path] = []
     
     for i, md_file in enumerate(md_files, 1):
         title = md_file.stem.replace("-", " ").title()
@@ -376,7 +642,7 @@ def classify_and_organize(
         print(f"[{i}/{len(md_files)}] {md_file.name}...", end=" ", flush=True)
         
         # Classifier avec Ollama
-        category = classify_note(title, content, categories, model)
+        category = classify_note(title, content, categories, categories_with_hints, model)
         
         if category is None:
             print("ERREUR API")
@@ -385,6 +651,10 @@ def classify_and_organize(
         
         print(f"→ {category}")
         stats[category] = stats.get(category, 0) + 1
+        
+        # Collecter les fichiers 'À faire' / 'To do'
+        if category.lower() in ["à faire", "a faire", "a-faire", "to do", "todo"]:
+            todo_files.append(md_file)
         
         # Déplacer le fichier
         if not dry_run:
@@ -409,15 +679,30 @@ def classify_and_organize(
     
     # Résumé
     print("\n" + "=" * 60)
-    print("RÉSUMÉ DE LA CLASSIFICATION")
+    print(msg("summary"))
     print("=" * 60)
     
     for cat, count in sorted(stats.items(), key=lambda x: -x[1]):
         if count > 0:
-            print(f"  {cat}: {count} fichiers")
+            print(f"  {cat}: {count} {msg('files')}")
+    
+    # Générer le fichier Todo.md à partir de TOUS les fichiers du dossier "À faire" / "To do"
+    todo_dir_name = "À faire" if LANG == "fr" else "To do"
+    todo_dir = md_dir / todo_dir_name
+    if todo_dir.exists():
+        all_todo_files = list(todo_dir.glob("*.md"))
+        # Exclure le fichier Todo.md lui-même
+        all_todo_files = [f for f in all_todo_files if f.name.lower() not in ["todo.md"]]
+        if all_todo_files:
+            print(msg("todo_found", count=len(all_todo_files)))
+            generate_todo_file(all_todo_files, md_dir, dry_run)
+    elif todo_files:
+        # En mode dry-run, le dossier n'existe pas encore, utiliser les fichiers collectés
+        print(msg("todo_classified", count=len(todo_files)))
+        generate_todo_file(todo_files, md_dir, dry_run)
     
     if dry_run:
-        print("\n⚠️  Mode simulation - aucun fichier n'a été déplacé")
+        print(f"\n{msg('simulation_warning')}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -425,8 +710,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="Classifie automatiquement les fichiers Markdown avec Ollama."
     )
     parser.add_argument(
-        "md_dir", 
-        help="Répertoire contenant les fichiers Markdown"
+        "md_dir",
+        nargs="?",
+        default=None,
+        help="Répertoire contenant les fichiers Markdown (interactif si non spécifié)"
     )
     parser.add_argument(
         "--model", "-m",
@@ -445,6 +732,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Limiter le nombre de fichiers à traiter"
     )
     parser.add_argument(
+        "--include-subfolders", "-s",
+        action="store_true",
+        help="Inclure les fichiers des sous-dossiers (par défaut: racine uniquement)"
+    )
+    parser.add_argument(
         "--categories", "-c",
         nargs="+",
         default=None,
@@ -453,21 +745,83 @@ def main(argv: Optional[List[str]] = None) -> int:
     
     args = parser.parse_args(argv)
     
-    md_dir = Path(args.md_dir).expanduser().resolve()
+    # Charger la configuration
+    config = load_config()
+    
+    # Mode interactif si aucun dossier spécifié
+    if args.md_dir is None:
+        print(f"\n{msg('config_title')}")
+        print("-" * 40)
+        
+        # Choix du dossier
+        default_dir = config.get("source_dir", "")
+        prompt_dir = f"{msg('source_dir')} [{default_dir}]: " if default_dir else f"{msg('source_dir')}: "
+        choix_dir = input(prompt_dir).strip()
+        
+        if choix_dir:
+            md_dir = Path(choix_dir).expanduser().resolve()
+        elif default_dir:
+            md_dir = Path(default_dir).expanduser().resolve()
+        else:
+            print(msg("no_dir"))
+            return 1
+        
+        if not md_dir.is_dir():
+            print(f"{msg('invalid_dir')}: {md_dir}")
+            return 1
+        
+        config["source_dir"] = str(md_dir)
+        
+        # Choix du modèle
+        try:
+            result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')[1:]
+                models = [line.split()[0] for line in lines if line.strip()]
+                
+                if models:
+                    print(f"\n{msg('models_title')}")
+                    for i, m in enumerate(models, 1):
+                        print(f"   {i}. {m}")
+                    
+                    default_model = config.get("model", "")
+                    prompt_model = f"{msg('choice')} [{default_model}]: " if default_model else f"{msg('choice')}: "
+                    choix_model = input(prompt_model).strip()
+                    
+                    if choix_model.isdigit() and 1 <= int(choix_model) <= len(models):
+                        args.model = models[int(choix_model) - 1]
+                    elif choix_model:
+                        args.model = choix_model
+                    elif default_model:
+                        args.model = default_model
+                    
+                    if args.model:
+                        config["model"] = args.model
+        except:
+            pass
+        
+        # Sauvegarder la configuration
+        save_config(config)
+        print()
+    else:
+        md_dir = Path(args.md_dir).expanduser().resolve()
     
     # Charger les catégories depuis le fichier ou les arguments
     if args.categories:
         categories = args.categories
+        categories_with_hints = args.categories  # Pas d'indices si passé en argument
     else:
-        categories = load_categories()
+        categories, categories_with_hints = load_categories()
     
     try:
         classify_and_organize(
             md_dir=md_dir,
             categories=categories,
+            categories_with_hints=categories_with_hints,
             model=args.model,
             dry_run=args.dry_run,
-            limit=args.limit
+            limit=args.limit,
+            include_subfolders=args.include_subfolders
         )
     except Exception as e:
         print(f"Erreur: {e}", file=sys.stderr)
