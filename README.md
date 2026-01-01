@@ -1,18 +1,18 @@
-# Classement notes Markdown
+# Markdown Notes Classifier
 
-⚠️ Petit projet de vacances **vibecodé**. N'en attendez rien de fiable.
+⚠️ A small holiday **vibecoded** project. Don't expect anything reliable.
 
-Inspiré de [Note-Station-to-markdown](https://github.com/Maboroshy/Note-Station-to-markdown/). À lancer après pour re-classer les notes obtenues.
+Inspired by [Note-Station-to-markdown](https://github.com/Maboroshy/Note-Station-to-markdown/). Run after to re-classify the exported notes.
 
-## Quoi
+## Features
 
-- Classification automatique de notes Markdown par IA (Ollama)
-- Détection automatique de la puissance du PC pour choisir le bon modèle
-- Génération d'un fichier `Todo.md` consolidé pour les tâches
-- Interface multilingue (FR/EN selon la langue système)
-- Mode interactif avec sauvegarde de la configuration
+- Automatic Markdown notes classification using AI (Ollama)
+- Automatic PC power detection to choose the appropriate model
+- Generation of a consolidated `Todo.md` file for tasks
+- Multilingual interface (FR/EN based on system language)
+- Interactive mode with configuration saving
 
-## Installation éclair
+## Quick Installation
 
 ```bash
 python -m venv venv
@@ -20,100 +20,100 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Pré-requis rapides
+## Quick Requirements
 
 - Python 3.8+
-- [Ollama](https://ollama.ai) installé (pour la classification IA)
-- Un modèle llama3 sera téléchargé automatiquement si absent
+- [Ollama](https://ollama.ai) installed (for AI classification)
+- A llama3 model will be automatically downloaded if missing
 
-## Lancement
+## Usage
 
-### Mode interactif (recommandé)
+### Interactive Mode (recommended)
 
 ```bash
 python classify_with_ollama.py
 ```
 
-Le script demande le dossier source et le modèle, puis sauvegarde la configuration pour les prochaines exécutions.
+The script prompts for the source folder and model, then saves the configuration for future runs.
 
-### Mode ligne de commande
+### Command Line Mode
 
 ```bash
-# Classifier les fichiers Markdown d'un dossier
-python classify_with_ollama.py ./mon_dossier
+# Classify Markdown files in a folder
+python classify_with_ollama.py ./my_folder
 
-# Inclure aussi les fichiers des sous-dossiers
-python classify_with_ollama.py ./mon_dossier --include-subfolders
+# Include files from subfolders
+python classify_with_ollama.py ./my_folder --include-subfolders
 
-# Simulation sans déplacer les fichiers
-python classify_with_ollama.py ./mon_dossier --dry-run
+# Dry run without moving files
+python classify_with_ollama.py ./my_folder --dry-run
 
-# Limiter le nombre de fichiers traités
-python classify_with_ollama.py ./mon_dossier --limit 50
+# Limit the number of processed files
+python classify_with_ollama.py ./my_folder --limit 50
 
-# Forcer un modèle Ollama spécifique
-python classify_with_ollama.py ./mon_dossier --model llama3:8b-instruct-q4_0
+# Force a specific Ollama model
+python classify_with_ollama.py ./my_folder --model llama3:8b-instruct-q4_0
 ```
 
-### Générer Todo.md indépendamment
+### Generate Todo.md Independently
 
 ```bash
-# Générer un Todo.md à partir d'un dossier
-python generate_todo.py "./À faire"
+# Generate a Todo.md from a folder
+python generate_todo.py "./To do"
 
-# Mode simulation
-python generate_todo.py "./À faire" --dry-run
+# Dry run mode
+python generate_todo.py "./To do" --dry-run
 ```
 
 ## Configuration
 
-### Catégories (`categories.txt` / `categories_en.txt`)
+### Categories (`categories.txt` / `categories_en.txt`)
 
-Une catégorie par ligne avec un indice pour l'IA après `#`.
+One category per line with a hint for the AI after `#`.
 
 ```
-Courses         # Liste d'ingrédients SANS instructions, juste des quantités
-Recettes        # Instructions de cuisine AVEC étapes de préparation
-Sport           # Exercices, entraînements, courses à pied
-Personnel       # Journal intime, suivi alimentaire avec horaires
-À faire         # Tâches, todo lists
+Shopping        # Ingredient list WITHOUT instructions, just quantities
+Recipes         # Cooking instructions WITH preparation steps
+Sport           # Exercises, workouts, running
+Personal        # Personal diary, food tracking with times
+To do           # Tasks, todo lists
 ```
 
-### Prompt IA (`prompts/classify.txt`)
+### AI Prompt (`prompts/classify.txt`)
 
-Personnalisez le prompt envoyé à l'IA. Variables disponibles :
-- `{categories}` : liste des catégories
-- `{categories_with_hints}` : catégories avec leurs indices
-- `{title}` : titre de la note
-- `{content}` : contenu de la note
+Customize the prompt sent to the AI. Available variables:
+- `{categories}`: list of categories
+- `{categories_with_hints}`: categories with their hints
+- `{title}`: note title
+- `{content}`: note content
 
 ### Configuration (`config.json`)
 
-Créé automatiquement, sauvegarde :
-- `source_dir` : dernier dossier utilisé
-- `model` : dernier modèle sélectionné
+Automatically created, saves:
+- `source_dir`: last used folder
+- `model`: last selected model
 
 ## Structure
 
 ```
-Classement notes Markdown/
-├── classify_with_ollama.py     # Classification IA
-├── generate_todo.py            # Génération Todo.md
-├── categories.txt              # Catégories FR (éditable)
-├── categories_en.txt           # Catégories EN (éditable)
-├── config.json                 # Configuration (auto-généré)
+Markdown Notes Classifier/
+├── classify_with_ollama.py     # AI Classification
+├── generate_todo.py            # Todo.md Generation
+├── categories.txt              # FR Categories (editable)
+├── categories_en.txt           # EN Categories (editable)
+├── config.json                 # Configuration (auto-generated)
 ├── prompts/
-│   ├── classify.txt            # Prompt FR
-│   └── classify_en.txt         # Prompt EN
+│   ├── classify.txt            # FR Prompt
+│   └── classify_en.txt         # EN Prompt
 └── requirements.txt
 ```
 
-## Notes de fiabilité
+## Reliability Notes
 
-- La qualité de la classification dépend du modèle Ollama et du contenu des notes
-- Les notes très courtes ou vides sont difficiles à classifier
-- Les indices dans `categories.txt` améliorent significativement la précision
+- Classification quality depends on the Ollama model and note content
+- Very short or empty notes are difficult to classify
+- Hints in `categories.txt` significantly improve accuracy
 
-## Licence
+## License
 
 MIT

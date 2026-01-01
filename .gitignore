@@ -45,3 +45,6 @@ exports/
 # Fichiers générés
 Todo.md
 Todo_*.md
+
+TODO.md
+config.json
