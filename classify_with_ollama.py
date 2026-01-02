@@ -37,8 +37,29 @@ PROMPTS_DIR = SCRIPT_DIR / "prompts"
 def get_system_language() -> str:
     """Détecte la langue du système (fr ou en)."""
     try:
-        # Utiliser les variables d'environnement
-        lang = os.environ.get("LANG", "") or os.environ.get("LANGUAGE", "") or os.environ.get("LC_ALL", "en")
+        # Sur Windows, utiliser plusieurs méthodes
+        if os.name == 'nt':  # Windows
+            # Méthode 1: Utiliser PowerShell pour récupérer la culture
+            try:
+                result = subprocess.run(
+                    ['powershell', '-Command', '(Get-Culture).Name'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    culture = result.stdout.strip()
+                    if culture.startswith('fr'):
+                        return "fr"
+            except:
+                pass
+            
+            # Méthode 2: Variables d'environnement Windows
+            for var in ['LC_ALL', 'LC_CTYPE', 'LANG', 'LANGUAGE']:
+                lang = os.environ.get(var, "")
+                if lang.startswith('fr'):
+                    return "fr"
+        
+        # Fallback : utiliser les variables d'environnement (Linux/macOS)
+        lang = os.environ.get("LANG", "") or os.environ.get("LANGUAGE", "") or os.environ.get("LC_ALL", "")
         return "fr" if lang.startswith("fr") else "en"
     except:
         return "en"
