@@ -374,6 +374,44 @@ def slugify(value: str, max_length: int = 80) -> str:
     return value
 
 
+def extract_attachments(content: str, md_file_path: Path) -> List[Path]:
+    """Extrait les chemins des fichiers attachés depuis le contenu Markdown.
+    
+    Cherche les références de type:
+    - ![alt](chemin/vers/fichier.ext)
+    - [text](chemin/vers/fichier.ext)
+    
+    Returns:
+        Liste des chemins absolus des fichiers attachés qui existent
+    """
+    attachments = []
+    
+    # Pattern pour capturer les références Markdown: ![...](...) ou [...](...)
+    import re
+    pattern = r'!?\[([^\]]*)\]\(([^\)]+)\)'
+    
+    matches = re.findall(pattern, content)
+    
+    for alt_text, file_path in matches:
+        # Ignorer les URLs (http://, https://, etc.)
+        if file_path.startswith(('http://', 'https://', 'ftp://', 'mailto:')):
+            continue
+        
+        # Construire le chemin absolu relatif au fichier MD
+        if file_path.startswith('/'):
+            # Chemin absolu (rare dans ce contexte)
+            abs_path = Path(file_path)
+        else:
+            # Chemin relatif au fichier MD
+            abs_path = (md_file_path.parent / file_path).resolve()
+        
+        # Vérifier que le fichier existe
+        if abs_path.exists() and abs_path.is_file():
+            attachments.append(abs_path)
+    
+    return attachments
+
+
 def read_md_file(filepath: Path, max_chars: int = 1000) -> str:
     """Lit le contenu d'un fichier MD (limité pour l'API)."""
     try:
@@ -385,6 +423,62 @@ def read_md_file(filepath: Path, max_chars: int = 1000) -> str:
     except Exception as e:
         print(f"  Erreur lecture {filepath}: {e}")
         return ""
+
+
+def extract_attachments_from_md(content: str) -> List[dict]:
+    """Extrait les informations sur les pièces jointes d'un fichier Markdown.
+    
+    Returns:
+        Liste de dictionnaires contenant les informations sur les pièces jointes
+    """
+    attachments = []
+    
+    # Pattern pour capturer les références Markdown: ![...](...) ou [...](...) 
+    pattern = r'!?\[([^\]]*)\]\(([^\)]+)\)'
+    
+    matches = re.findall(pattern, content)
+    
+    for alt_text, file_path in matches:
+        # Ignorer les URLs
+        if file_path.startswith(('http://', 'https://', 'ftp://', 'mailto:')):
+            continue
+        
+        # Extraire le nom du fichier
+        filename = os.path.basename(file_path)
+        
+        # Extraire l'extension de fichier
+        ext = os.path.splitext(filename)[1].lower() if '.' in filename else ''
+        
+        # Déterminer le type de fichier
+        file_type = ''
+        if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+            file_type = 'image'
+        elif ext in ['.pdf']:
+            file_type = 'pdf'
+        elif ext in ['.doc', '.docx']:
+            file_type = 'word'
+        elif ext in ['.xls', '.xlsx']:
+            file_type = 'excel'
+        elif ext in ['.ppt', '.pptx']:
+            file_type = 'powerpoint'
+        elif ext in ['.mp3', '.wav', '.ogg']:
+            file_type = 'audio'
+        elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
+            file_type = 'video'
+        elif ext in ['.txt']:
+            file_type = 'text'
+        elif ext in ['.zip', '.rar', '.7z', '.tar', '.gz']:
+            file_type = 'archive'
+        else:
+            file_type = 'document'
+        
+        attachments.append({
+            'filename': filename,
+            'extension': ext,
+            'type': file_type
+        })
+    
+    return attachments
 
 
 def read_md_file_full(filepath: Path) -> Tuple[str, str, str]:
@@ -457,6 +551,9 @@ def call_ollama(prompt: str, model: Optional[str] = None) -> Optional[str]:
 def classify_note(title: str, content: str, categories: List[str], categories_with_hints: List[str], model: Optional[str] = None) -> Optional[str]:
     """Utilise Ollama pour classifier une note dans une catégorie."""
     
+    # Extraire les informations sur les pièces jointes
+    attachments = extract_attachments_from_md(content)
+    
     categories_list = ", ".join(categories)
     hints_formatted = "\n".join(f"- {hint}" for hint in categories_with_hints)
     
@@ -485,7 +582,14 @@ Contenu:
 {content}
 
 Catégorie:"""
-
+    
+    # Ajouter des informations sur les pièces jointes si elles existent
+    if attachments:
+        attachment_info = "\n\nPièces jointes:"
+        for att in attachments:
+            attachment_info += f"\n- {att['filename']} ({att['type']})"
+        prompt += attachment_info
+    
     response = call_ollama(prompt, model)
     
     if not response:
@@ -508,6 +612,85 @@ Catégorie:"""
             return cat
     
     return "Divers"
+
+
+def move_attachments(md_file_path: Path, dest_dir: Path, dry_run: bool = False) -> int:
+    """Déplace les fichiers attachés référencés dans un fichier Markdown.
+    
+    Args:
+        md_file_path: Chemin du fichier Markdown
+        dest_dir: Dossier de destination
+        dry_run: Si True, simule le déplacement sans le faire
+    
+    Returns:
+        Nombre de fichiers déplacés
+    """
+    moved_count = 0
+    
+    try:
+        content = md_file_path.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"    ⚠️  Erreur lecture fichier pour attachments: {e}")
+        return 0
+    
+    # Extraire les chemins des fichiers attachés
+    import re
+    pattern = r'!?\[([^\]]*)\]\(([^\)]+)\)'
+    matches = re.findall(pattern, content)
+    
+    for alt_text, file_path in matches:
+        # Ignorer les URLs
+        if file_path.startswith(('http://', 'https://', 'ftp://', 'mailto:')):
+            continue
+        
+        # Construire le chemin absolu
+        if file_path.startswith('/'):
+            abs_path = Path(file_path)
+        else:
+            abs_path = (md_file_path.parent / file_path).resolve()
+        
+        # Vérifier que le fichier existe
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        
+        try:
+            # Calculer le chemin relatif pour préserver la structure (ex: media/)
+            try:
+                rel_path = abs_path.relative_to(md_file_path.parent)
+            except ValueError:
+                # Si pas dans un sous-dossier relatif, utiliser juste le nom
+                rel_path = Path(abs_path.name)
+            
+            # Construire le chemin de destination
+            dest_path = dest_dir / rel_path
+            
+            if dry_run:
+                print(f"    📎 [simulation] {abs_path.name} → {dest_path.parent.name}/")
+                moved_count += 1
+                continue
+            
+            # Créer les sous-dossiers si nécessaire (ex: media/)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Gérer les conflits de nom
+            if dest_path.exists() and dest_path != abs_path:
+                base = dest_path.stem
+                ext = dest_path.suffix
+                suffix = 1
+                while dest_path.exists():
+                    dest_path = dest_path.parent / f"{base}_{suffix}{ext}"
+                    suffix += 1
+            
+            # Déplacer le fichier
+            if abs_path.exists():
+                shutil.move(str(abs_path), str(dest_path))
+                print(f"    📎 {abs_path.name} → {rel_path}")
+                moved_count += 1
+                
+        except Exception as e:
+            print(f"    ⚠️  Erreur déplacement {abs_path.name}: {e}")
+    
+    return moved_count
 
 
 def get_all_md_files(base_dir: Path, include_subfolders: bool = True) -> List[Path]:
@@ -653,17 +836,16 @@ def classify_and_organize(
     todo_files: List[Path] = []
     
     for i, md_file in enumerate(md_files, 1):
-        title = md_file.stem.replace("-", " ").title()
-        content = read_md_file(md_file)
+        title, modified, body = read_md_file_full(md_file)
         
-        if not content:
+        if not body:
             stats["erreur"] += 1
             continue
         
         print(f"[{i}/{len(md_files)}] {md_file.name}...", end=" ", flush=True)
         
-        # Classifier avec Ollama
-        category = classify_note(title, content, categories, categories_with_hints, model)
+        # Classifier avec Ollama en utilisant le contenu complet
+        category = classify_note(title, body, categories, categories_with_hints, model)
         
         if category is None:
             print("ERREUR API")
@@ -677,9 +859,10 @@ def classify_and_organize(
         if category.lower() in ["à faire", "a faire", "a-faire", "to do", "todo"]:
             todo_files.append(md_file)
         
-        # Déplacer le fichier
+        # Déplacer le fichier et ses attachements
+        dest_dir = md_dir / slugify(category)
+        
         if not dry_run:
-            dest_dir = md_dir / slugify(category)
             dest_dir.mkdir(parents=True, exist_ok=True)
             
             dest_path = dest_dir / md_file.name
@@ -692,8 +875,15 @@ def classify_and_organize(
                     dest_path = dest_dir / f"{base}_{suffix}.md"
                     suffix += 1
             
+            # Déplacer les fichiers attachés d'abord
+            attachments_moved = move_attachments(md_file, dest_dir, dry_run=False)
+            
+            # Déplacer le fichier MD
             if md_file.parent != dest_dir:
                 shutil.move(str(md_file), str(dest_path))
+        else:
+            # Mode simulation: afficher les attachements
+            attachments_moved = move_attachments(md_file, dest_dir, dry_run=True)
         
         # Petite pause pour ne pas surcharger Ollama
         time.sleep(0.1)
